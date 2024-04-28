@@ -1,7 +1,9 @@
-Makefile
 *.so
+*.a
+*.o
 cmake_install.cmake
 CMakeFiles/
 build/
 .vscode/
 CMakeCache.txt
+bin/

@@ -1,16 +1,18 @@
 #include "fastdynamicarray.h"
+#include "optimize/opt_header.h"
 #include <stdlib.h>
 #include <string.h>
 
 #include <stdio.h>
 
 #define END_OBJECT FDA_END_OBJECT
+#define FDA_DEBUG 0
 
 // To simplify, we use this as a list of the end object
 typedef END_OBJECT* subarray;
 
 // Optimized 32-bit power results used in this data structure
-const uint32_t POWs[34] = {0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216, 33554432, 67108864, 134217728, 268435456, 536870912, 1073741824, 2147483648};
+
 
 // Quick function to allocate an "subarray" into the memory
 static inline subarray new_subarray(size_t size) {
@@ -24,8 +26,10 @@ typedef struct fda{
     uint32_t roots_length;
     uint32_t capacity;
     subarray* subarrays;
+    subarray* end;
 } FastDynamicArray;
 
+#if FDA_DEBUG
 // Debug for me
 void debug_roots(FastDynamicArray* array) {
     printf("Roots length: %i\n", array->roots_length);
@@ -33,6 +37,7 @@ void debug_roots(FastDynamicArray* array) {
         printf("  Root %i: %s\n", i, array->subarrays[i] != NULL ? "Built" : "Null");
     }
 }
+#endif // FDA_DEBUG
 
 
 FastDynamicArray* fda_new_array() {
@@ -40,6 +45,7 @@ FastDynamicArray* fda_new_array() {
     fda->roots_length = 0;
     fda->capacity = 0;
     fda->subarrays = NULL;
+    fda->end = NULL;
     return fda;
 }
 
@@ -71,20 +77,8 @@ void pop_roots(FastDynamicArray* array, uint32_t remove) {
     }
 }
 
-// Quicker way than using the standard library to find floor of log2 of n.
-static inline uint32_t floorlog2(uint32_t n) {
-    uint32_t res = 0;
-    if(n >= 65536) { n >>= 16; res += 16;}
-    if(n >= 256)   { n >>= 8;  res += 8; }
-    if(n >= 16)    { n >>= 4;  res += 4; }
-    if(n >= 8)     { n >>= 2;  res += 2; }
-    if(n >= 4)     { n >>= 1;  res += 1; }
-    if(n >= 2)     {           res += 1; }
-    return res;
-}
-
 // Calculates the root index from index
-static inline uint32_t calculate_root(uint32_t index) {
+/*static inline uint32_t calculate_root(uint32_t index) {
     if(!index)
         return 0;
     return (uint32_t) floorlog2(index) + 1;
@@ -97,15 +91,17 @@ static inline uint32_t calculate_root_length(uint32_t root_index) {
         return 1;
     return (uint32_t) POWs[root_index];
 }
+*/
 
 // Finds out the index we need to use in our subarray
-static inline uint32_t calculate_subindex(uint32_t index) {
+uint32_t calculate_subindex(uint32_t index) {
     if(!index)
         return 0;
     uint32_t root_index = calculate_root(index);
     return index % POWs[root_index];
 }
 
+#if FDA_DEBUG
 void debug_algorithms(int high) {
     printf("Calculate roots:\n");
     for(int i = 0; i < high; i++) {
@@ -142,15 +138,36 @@ void debug_array(FastDynamicArray* array) {
         }
     }
 }
-
+#endif // FDA_DEBUG
+/**
+ * Takes the end pointer and updates it
+*/
+static inline void ptr_next(FastDynamicArray* array, uint32_t root_index, uint32_t subindex) {
+    uint32_t sublen = calculate_root_length(root_index);
+    if(!array->end) {
+        array->end = *array->subarrays[0];
+    } else if(sublen < subindex) {
+        uint32_t tmp = root_index + 1;
+        if(!array->subarrays[tmp])
+            array->subarrays[tmp] = new_subarray(calculate_root(tmp));
+        array->end = *array->subarrays[tmp];
+    } else {
+        array->end++;
+    }
+}
 
 // Resizes the array, in this case, the worst-ever case would be O(log(n)), which is the point of this library
+// TODO: Optimize with end pointer
 void fda_push_back(FastDynamicArray* array, END_OBJECT value) {
+    printf("Calculating root...\n");
     uint32_t root_index = calculate_root(array->capacity);
-    if(root_index >= array->roots_length)
+    printf("Check if roots need to be added...\n");
+    if(root_index >= array->roots_length) 
         add_roots(array, root_index - array->roots_length + 1);
+    printf("Check if subarray needs to be malloc'ed...\n");
     if(!array->subarrays[root_index])
         array->subarrays[root_index] = new_subarray(calculate_root_length(root_index));
+    printf("Calculating subindex...\n");
     uint32_t subindex = calculate_subindex(array->capacity);
     subarray root = array->subarrays[root_index];
     END_OBJECT test = root[subindex];
@@ -171,10 +188,11 @@ END_OBJECT fda_get(FastDynamicArray* array, uint32_t index) {
     if(index >= array->capacity)
         return 0;
     uint32_t root_index = calculate_root(index);
-    uint32_t subindex   = calculate_subindex(index);
+    uint32_t subindex   = index % POWs[root_index]; //calculate_subindex(index);
     subarray s = array->subarrays[root_index];
     return s[subindex];
 }
     
 
+#undef FDA_DEBUG
 #undef END_OBJECT
